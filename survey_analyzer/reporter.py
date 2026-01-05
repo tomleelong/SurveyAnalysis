@@ -81,11 +81,10 @@ class ReportGenerator:
         """
         # Generate insights
         key_insights = None
-        dept_chart = None
-        funnel_chart = None
-        tool_stickiness_chart = None
-        barriers_chart = None
-        usecase_heatmap = None
+        segmentation_chart = None
+        distribution_chart = None
+        completion_chart = None
+        question_type_chart = None
 
         if include_insights:
             insights_gen = InsightsGenerator(self.survey, config=self.insights_config)
@@ -95,20 +94,17 @@ class ReportGenerator:
             key_insights = insights.key_insights
 
             if include_charts:
-                dept_chart = insights_viz.fig_to_html(
-                    insights_viz.create_department_heatmap()
+                segmentation_chart = insights_viz.fig_to_html(
+                    insights_viz.create_segmentation_chart()
                 )
-                funnel_chart = insights_viz.fig_to_html(
-                    insights_viz.create_adoption_funnel()
+                distribution_chart = insights_viz.fig_to_html(
+                    insights_viz.create_distribution_chart()
                 )
-                tool_stickiness_chart = insights_viz.fig_to_html(
-                    insights_viz.create_tool_stickiness_chart()
+                completion_chart = insights_viz.fig_to_html(
+                    insights_viz.create_completion_gauge()
                 )
-                barriers_chart = insights_viz.fig_to_html(
-                    insights_viz.create_barriers_chart()
-                )
-                usecase_heatmap = insights_viz.fig_to_html(
-                    insights_viz.create_use_case_by_dept_heatmap()
+                question_type_chart = insights_viz.fig_to_html(
+                    insights_viz.create_question_type_chart()
                 )
 
         # Prepare question data with charts
@@ -164,11 +160,10 @@ class ReportGenerator:
             avg_completion_time=self.analysis.avg_completion_time_minutes,
             question_count=len(self.analysis.question_stats),
             key_insights=key_insights,
-            dept_chart=dept_chart,
-            funnel_chart=funnel_chart,
-            tool_stickiness_chart=tool_stickiness_chart,
-            barriers_chart=barriers_chart,
-            usecase_heatmap=usecase_heatmap,
+            segmentation_chart=segmentation_chart,
+            distribution_chart=distribution_chart,
+            completion_chart=completion_chart,
+            question_type_chart=question_type_chart,
             summary_chart=summary_chart,
             response_rate_chart=response_rate_chart,
             question_data=question_data,

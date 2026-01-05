@@ -206,9 +206,9 @@ class SurveyMonkeyParser:
             ):
                 return QuestionType.NUMERIC_SCALE
 
-        # Check for matrix (options have consistent patterns like "Tool - Rating")
+        # Check for matrix (options have consistent patterns like "Item - Rating")
         if len(question.options) > 4:
-            # Look for pattern like "AlphaSense - Good riddance", "AlphaSense - Can live without"
+            # Look for pattern like "Product A - Satisfied", "Product A - Neutral"
             dash_pattern = re.compile(r"^.+ - .+$")
             if all(dash_pattern.match(opt.label) for opt in question.options if opt.label):
                 return QuestionType.MATRIX

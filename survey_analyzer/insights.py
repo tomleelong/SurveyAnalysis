@@ -1,11 +1,15 @@
-"""Advanced analytics and insights generation for survey data."""
+"""Advanced analytics and insights generation for survey data.
+
+This module provides general-purpose survey insights that work with any
+Survey Monkey export, without assumptions about specific question content.
+"""
 
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
 
 from .analyzer import SurveyAnalyzer
-from .models import InsightsConfig, Question, QuestionMapping, Survey
+from .models import InsightsConfig, Question, QuestionMapping, QuestionType, Survey
 
 logger = logging.getLogger(__name__)
 
@@ -22,35 +26,33 @@ class Insight:
 
 
 @dataclass
-class DepartmentProfile:
-    """Usage profile for a department."""
+class SegmentProfile:
+    """Profile for a segment (e.g., department, role, location)."""
 
     name: str
     respondent_count: int
-    heavy_users_pct: float
-    top_tools: list[tuple[str, int]]
-    top_use_cases: list[tuple[str, int]]
+    response_rate: float  # % of total respondents
+    top_selections: list[tuple[str, int]]  # Top selections from secondary question
 
 
 @dataclass
-class ToolImportance:
-    """Importance metrics for a tool."""
+class QuestionCorrelation:
+    """Correlation between two questions."""
 
-    name: str
-    user_count: int
-    super_bummed: int
-    disappointed: int
-    neutral: int
-    can_live_without: int
-    good_riddance: int
+    question1_text: str
+    question2_text: str
+    segments: list[SegmentProfile]
 
-    @property
-    def stickiness_score(self) -> float:
-        """Calculate stickiness as % who would miss it."""
-        total = self.super_bummed + self.disappointed + self.neutral + self.can_live_without + self.good_riddance
-        if total == 0:
-            return 0
-        return (self.super_bummed + self.disappointed) / total * 100
+
+@dataclass
+class ResponseDistribution:
+    """Distribution analysis for a question."""
+
+    question_text: str
+    question_id: str
+    total_responses: int
+    top_options: list[tuple[str, int, float]]  # (option, count, percentage)
+    concentration: float  # How concentrated responses are (0-100)
 
 
 @dataclass
@@ -58,18 +60,17 @@ class SurveyInsights:
     """Collection of insights from survey analysis."""
 
     key_insights: list[Insight] = field(default_factory=list)
-    department_profiles: list[DepartmentProfile] = field(default_factory=list)
-    tool_importance: list[ToolImportance] = field(default_factory=list)
-    barriers: dict[str, int] = field(default_factory=dict)
-    compliance_gap: dict[str, int] = field(default_factory=dict)
-    adoption_funnel: dict[str, int] = field(default_factory=dict)
+    segmentation_analysis: list[QuestionCorrelation] = field(default_factory=list)
+    response_distributions: list[ResponseDistribution] = field(default_factory=list)
+    completion_insights: dict[str, float] = field(default_factory=dict)
+    response_patterns: dict[str, int] = field(default_factory=dict)
 
 
 class InsightsGenerator:
-    """Generate advanced insights from survey data.
+    """Generate general-purpose insights from survey data.
 
-    This class is config-driven and can work with any survey structure
-    by mapping question purposes to question IDs or text patterns.
+    This class analyzes survey data to find patterns, distributions,
+    and correlations without assuming specific question content.
     """
 
     def __init__(self, survey: Survey, config: InsightsConfig | None = None):
@@ -77,372 +78,277 @@ class InsightsGenerator:
 
         Args:
             survey: The survey data to analyze.
-            config: Configuration mapping question purposes to IDs.
-                   If None, attempts auto-detection using default patterns.
+            config: Optional configuration for customizing insights.
         """
         self.survey = survey
         self.analyzer = SurveyAnalyzer(survey)
-        self.config = config or InsightsConfig.create_default()
+        self.config = config or InsightsConfig()
         self._question_cache: dict[str, Question | None] = {}
 
     def _resolve_question(self, mapping: QuestionMapping | None) -> Question | None:
-        """Resolve a question mapping to an actual Question object.
-
-        Args:
-            mapping: The question mapping to resolve.
-
-        Returns:
-            The matched Question or None if not found.
-        """
+        """Resolve a question mapping to an actual Question object."""
         if mapping is None:
             return None
 
-        # Create cache key
         cache_key = f"{mapping.question_id}:{mapping.text_pattern}"
         if cache_key in self._question_cache:
             return self._question_cache[cache_key]
 
         question = None
-
-        # Try direct ID first
         if mapping.question_id:
             question = self.survey.get_question_by_id(mapping.question_id)
-
-        # Fall back to text pattern matching
         if question is None and mapping.text_pattern:
             question = self.survey.get_question_by_text(mapping.text_pattern)
 
         self._question_cache[cache_key] = question
         return question
 
-    def _get_response_options(
-        self, response, question: Question | None
-    ) -> list[str]:
-        """Get selected options for a question from a response."""
-        if question is None:
-            return []
-        answer = response.answers.get(question.id)
-        return answer.selected_options if answer else []
-
-    def _matches_any(self, options: list[str], values: list[str]) -> bool:
-        """Check if any option matches any of the target values."""
-        return any(v in options for v in values)
-
-    def _contains_any_keyword(self, options: list[str], keywords: list[str]) -> bool:
-        """Check if any option contains any of the keywords."""
-        for opt in options:
-            for kw in keywords:
-                if kw.lower() in opt.lower():
-                    return True
-        return False
-
     def generate(self) -> SurveyInsights:
-        """Generate all insights based on available question mappings."""
+        """Generate all insights from survey data."""
         insights = SurveyInsights()
 
-        # Only generate insights for questions that are mapped and found
-        dept_q = self._resolve_question(self.config.department_question)
-        freq_q = self._resolve_question(self.config.frequency_question)
-        tools_q = self._resolve_question(self.config.tools_question)
-        usecases_q = self._resolve_question(self.config.use_cases_question)
+        # Analyze completion patterns
+        insights.completion_insights = self._analyze_completion()
 
-        if dept_q:
-            insights.department_profiles = self._analyze_departments(
-                dept_q, freq_q, tools_q, usecases_q
+        # Analyze response distributions for key questions
+        insights.response_distributions = self._analyze_distributions()
+
+        # Analyze segmentation if configured
+        segment_q = self._resolve_question(self.config.segmentation_question)
+        secondary_q = self._resolve_question(self.config.secondary_question)
+        if segment_q:
+            insights.segmentation_analysis = self._analyze_segmentation(
+                segment_q, secondary_q
             )
 
-        tool_importance_q = self._resolve_question(self.config.tool_importance_question)
-        if tool_importance_q and tools_q:
-            insights.tool_importance = self._analyze_tool_importance(
-                tool_importance_q, tools_q
-            )
+        # Analyze response patterns
+        insights.response_patterns = self._analyze_response_patterns()
 
-        barriers_q = self._resolve_question(self.config.barriers_question)
-        if barriers_q:
-            insights.barriers = self._analyze_barriers(barriers_q)
-
-        workspace_q = self._resolve_question(self.config.managed_workspace_question)
-        admins_q = self._resolve_question(self.config.identify_admins_question)
-        if workspace_q or admins_q:
-            insights.compliance_gap = self._analyze_compliance(workspace_q, admins_q)
-
-        used_ai_q = self._resolve_question(self.config.used_ai_question)
-        cli_q = self._resolve_question(self.config.cli_tools_question)
-        insights.adoption_funnel = self._build_adoption_funnel(
-            used_ai_q, freq_q, tools_q, cli_q
-        )
-
+        # Generate key insights
         insights.key_insights = self._generate_key_insights(insights)
 
         return insights
 
-    def _analyze_departments(
-        self,
-        dept_q: Question,
-        freq_q: Question | None,
-        tools_q: Question | None,
-        usecases_q: Question | None,
-    ) -> list[DepartmentProfile]:
-        """Analyze usage patterns by department."""
-        dept_data: dict[str, dict] = {}
+    def _analyze_completion(self) -> dict[str, float]:
+        """Analyze survey completion patterns."""
+        analysis = self.analyzer.analyze()
 
-        for response in self.survey.responses:
-            dept_names = self._get_response_options(response, dept_q)
-            if not dept_names:
+        return {
+            "completion_rate": analysis.completion_rate,
+            "avg_completion_time": analysis.avg_completion_time_minutes or 0,
+            "total_responses": analysis.total_responses,
+        }
+
+    def _analyze_distributions(self) -> list[ResponseDistribution]:
+        """Analyze response distributions for multi-select questions."""
+        distributions = []
+        analysis = self.analyzer.analyze()
+
+        for stats in analysis.question_stats:
+            if not stats.option_counts:
                 continue
 
-            freq_options = self._get_response_options(response, freq_q)
-            is_heavy = self._matches_any(freq_options, self.config.heavy_user_values)
+            # Calculate concentration (how evenly distributed responses are)
+            total = sum(stats.option_counts.values())
+            if total == 0:
+                continue
 
-            tool_names = self._get_response_options(response, tools_q)
-            usecase_names = self._get_response_options(response, usecases_q)
+            # Get top options with percentages
+            sorted_options = sorted(
+                stats.option_counts.items(), key=lambda x: -x[1]
+            )[:5]
+            top_options = [
+                (opt, count, count / total * 100)
+                for opt, count in sorted_options
+            ]
 
-            for dept in dept_names:
-                if dept not in dept_data:
-                    dept_data[dept] = {
+            # Calculate concentration using Herfindahl-Hirschman Index
+            # Higher = more concentrated, lower = more evenly distributed
+            shares = [count / total for count in stats.option_counts.values()]
+            hhi = sum(s * s for s in shares) * 100
+            concentration = hhi
+
+            distributions.append(
+                ResponseDistribution(
+                    question_text=stats.question_text,
+                    question_id=stats.question_id,
+                    total_responses=stats.response_count,
+                    top_options=top_options,
+                    concentration=concentration,
+                )
+            )
+
+        # Sort by response count to show most answered questions first
+        return sorted(distributions, key=lambda x: -x.total_responses)[:10]
+
+    def _analyze_segmentation(
+        self, segment_q: Question, secondary_q: Question | None
+    ) -> list[QuestionCorrelation]:
+        """Analyze responses segmented by a grouping question."""
+        correlations = []
+        segment_data: dict[str, dict] = {}
+
+        for response in self.survey.responses:
+            answer = response.answers.get(segment_q.id)
+            if not answer or not answer.selected_options:
+                continue
+
+            # Get secondary question selections if available
+            secondary_selections = []
+            if secondary_q:
+                sec_answer = response.answers.get(secondary_q.id)
+                if sec_answer and sec_answer.selected_options:
+                    secondary_selections = sec_answer.selected_options
+
+            # Count by segment
+            for segment in answer.selected_options:
+                if segment not in segment_data:
+                    segment_data[segment] = {
                         "count": 0,
-                        "heavy": 0,
-                        "tools": Counter(),
-                        "usecases": Counter(),
+                        "selections": Counter(),
                     }
-                dept_data[dept]["count"] += 1
-                if is_heavy:
-                    dept_data[dept]["heavy"] += 1
-                dept_data[dept]["tools"].update(tool_names)
-                dept_data[dept]["usecases"].update(usecase_names)
+                segment_data[segment]["count"] += 1
+                segment_data[segment]["selections"].update(secondary_selections)
 
+        # Build profiles
+        total_respondents = self.survey.response_count
         profiles = []
-        for name, data in dept_data.items():
+        for name, data in segment_data.items():
             if data["count"] > 0:
                 profiles.append(
-                    DepartmentProfile(
+                    SegmentProfile(
                         name=name,
                         respondent_count=data["count"],
-                        heavy_users_pct=data["heavy"] / data["count"] * 100,
-                        top_tools=data["tools"].most_common(5),
-                        top_use_cases=data["usecases"].most_common(5),
+                        response_rate=data["count"] / total_respondents * 100,
+                        top_selections=data["selections"].most_common(5),
                     )
                 )
 
-        return sorted(profiles, key=lambda x: -x.heavy_users_pct)
+        # Sort by respondent count
+        profiles = sorted(profiles, key=lambda x: -x.respondent_count)
 
-    def _analyze_tool_importance(
-        self, importance_q: Question, tools_q: Question
-    ) -> list[ToolImportance]:
-        """Analyze tool stickiness from disappointment/importance question."""
-        q_stats = self.analyzer.analyze_question(importance_q)
-        tools_stats = self.analyzer.analyze_question(tools_q)
-
-        tool_data: dict[str, dict] = {}
-        sentiment = self.config.sentiment_mapping
-        sentiment_map = {
-            sentiment.super_bummed: "super_bummed",
-            sentiment.disappointed: "disappointed",
-            sentiment.neutral: "neutral",
-            sentiment.can_live_without: "can_live_without",
-            sentiment.good_riddance: "good_riddance",
-        }
-
-        for opt, count in q_stats.option_counts.items():
-            if " - " in opt:
-                parts = opt.rsplit(" - ", 1)
-                if len(parts) == 2:
-                    tool, sentiment_label = parts
-                    if tool not in tool_data:
-                        tool_data[tool] = {
-                            "super_bummed": 0,
-                            "disappointed": 0,
-                            "neutral": 0,
-                            "can_live_without": 0,
-                            "good_riddance": 0,
-                        }
-                    key = sentiment_map.get(sentiment_label)
-                    if key:
-                        tool_data[tool][key] = count
-
-        tools = []
-        for name, data in tool_data.items():
-            user_count = tools_stats.option_counts.get(name, 0)
-            tools.append(
-                ToolImportance(
-                    name=name,
-                    user_count=user_count,
-                    **data,
+        if profiles:
+            correlations.append(
+                QuestionCorrelation(
+                    question1_text=segment_q.text,
+                    question2_text=secondary_q.text if secondary_q else "",
+                    segments=profiles,
                 )
             )
 
-        return sorted(tools, key=lambda x: -x.stickiness_score)
+        return correlations
 
-    def _analyze_barriers(self, barriers_q: Question) -> dict[str, int]:
-        """Analyze barriers to adoption."""
-        q_stats = self.analyzer.analyze_question(barriers_q)
-        return dict(sorted(q_stats.option_counts.items(), key=lambda x: -x[1]))
-
-    def _analyze_compliance(
-        self, workspace_q: Question | None, admins_q: Question | None
-    ) -> dict[str, int]:
-        """Analyze workspace compliance gaps."""
-        result = {}
-
-        if workspace_q:
-            ws_stats = self.analyzer.analyze_question(workspace_q)
-            yes_count = sum(
-                ws_stats.option_counts.get(v, 0) for v in self.config.yes_values
-            )
-            no_count = sum(
-                ws_stats.option_counts.get(v, 0) for v in self.config.no_values
-            )
-            result["using_managed_workspace"] = yes_count
-            result["not_using_managed_workspace"] = no_count
-
-        if admins_q:
-            admin_stats = self.analyzer.analyze_question(admins_q)
-            yes_count = sum(
-                admin_stats.option_counts.get(v, 0) for v in self.config.yes_values
-            )
-            no_count = sum(
-                admin_stats.option_counts.get(v, 0) for v in self.config.no_values
-            )
-            result["can_identify_admins"] = yes_count
-            result["cannot_identify_admins"] = no_count
-
-        return result
-
-    def _build_adoption_funnel(
-        self,
-        used_ai_q: Question | None,
-        freq_q: Question | None,
-        tools_q: Question | None,
-        cli_q: Question | None,
-    ) -> dict[str, int]:
-        """Build adoption funnel metrics."""
-        total = self.survey.response_count
-
-        used_ai = 0
-        heavy_users = 0
-        multi_tool = 0
-        cli_users = 0
-
-        for response in self.survey.responses:
-            # Has used AI
-            if used_ai_q:
-                opts = self._get_response_options(response, used_ai_q)
-                if self._matches_any(opts, self.config.yes_values):
-                    used_ai += 1
-
-            # Heavy user
-            if freq_q:
-                opts = self._get_response_options(response, freq_q)
-                if self._matches_any(opts, self.config.heavy_user_values):
-                    heavy_users += 1
-
-            # Multi-tool user (3+ tools)
-            if tools_q:
-                opts = self._get_response_options(response, tools_q)
-                if len(opts) >= 3:
-                    multi_tool += 1
-
-            # CLI user
-            if cli_q:
-                opts = self._get_response_options(response, cli_q)
-                if self._contains_any_keyword(opts, self.config.cli_keywords):
-                    cli_users += 1
-
-        return {
-            "total_respondents": total,
-            "used_ai_at_work": used_ai,
-            "heavy_users": heavy_users,
-            "multi_tool_users": multi_tool,
-            "cli_power_users": cli_users,
+    def _analyze_response_patterns(self) -> dict[str, int]:
+        """Analyze general response patterns."""
+        patterns = {
+            "total_questions": self.survey.question_count,
+            "single_select_questions": 0,
+            "multi_select_questions": 0,
+            "open_text_questions": 0,
+            "matrix_questions": 0,
         }
+
+        for q in self.survey.questions:
+            if q.question_type == QuestionType.SINGLE_SELECT:
+                patterns["single_select_questions"] += 1
+            elif q.question_type == QuestionType.MULTI_SELECT:
+                patterns["multi_select_questions"] += 1
+            elif q.question_type == QuestionType.OPEN_TEXT:
+                patterns["open_text_questions"] += 1
+            elif q.question_type == QuestionType.MATRIX:
+                patterns["matrix_questions"] += 1
+
+        return patterns
 
     def _generate_key_insights(self, insights: SurveyInsights) -> list[Insight]:
         """Generate key insights from analyzed data."""
         key_insights = []
 
-        # 1. Department adoption gap
-        if insights.department_profiles:
-            top_dept = insights.department_profiles[0]
-            bottom_depts = [
-                d
-                for d in insights.department_profiles
-                if d.heavy_users_pct < self.config.low_adoption_threshold
+        # 1. Response rate insight
+        completion = insights.completion_insights
+        if completion.get("completion_rate", 0) > 0:
+            rate = completion["completion_rate"]
+            severity = "success" if rate >= 80 else "warning" if rate >= 50 else "info"
+            key_insights.append(
+                Insight(
+                    title="Survey Completion",
+                    description=f"{rate:.0f}% of respondents completed the survey with {int(completion.get('total_responses', 0))} total responses.",
+                    metric=f"{rate:.0f}%",
+                    severity=severity,
+                    category="completion",
+                )
+            )
+
+        # 2. Top response concentration
+        if insights.response_distributions:
+            most_concentrated = max(
+                insights.response_distributions,
+                key=lambda x: x.concentration,
+            )
+            if most_concentrated.top_options:
+                top_opt, top_count, top_pct = most_concentrated.top_options[0]
+                if top_pct > 50:
+                    key_insights.append(
+                        Insight(
+                            title="Dominant Response",
+                            description=f'"{top_opt[:40]}..." received {top_pct:.0f}% of responses for "{most_concentrated.question_text[:30]}..."',
+                            metric=f"{top_pct:.0f}%",
+                            severity="info",
+                            category="distribution",
+                        )
+                    )
+
+        # 3. Segmentation insight
+        if insights.segmentation_analysis:
+            seg = insights.segmentation_analysis[0]
+            if seg.segments:
+                largest = seg.segments[0]
+                smallest = seg.segments[-1] if len(seg.segments) > 1 else None
+
+                if smallest and largest.respondent_count > smallest.respondent_count * 2:
+                    key_insights.append(
+                        Insight(
+                            title="Segment Imbalance",
+                            description=f'"{largest.name}" has {largest.respondent_count} respondents ({largest.response_rate:.0f}%), while "{smallest.name}" has only {smallest.respondent_count} ({smallest.response_rate:.0f}%).',
+                            metric=f"{largest.response_rate:.0f}%",
+                            severity="warning",
+                            category="segmentation",
+                        )
+                    )
+
+        # 4. Question type breakdown
+        patterns = insights.response_patterns
+        total_q = patterns.get("total_questions", 0)
+        if total_q > 0:
+            multi = patterns.get("multi_select_questions", 0)
+            single = patterns.get("single_select_questions", 0)
+            open_text = patterns.get("open_text_questions", 0)
+
+            key_insights.append(
+                Insight(
+                    title="Survey Structure",
+                    description=f"Survey has {total_q} questions: {single} single-select, {multi} multi-select, {open_text} open-text.",
+                    metric=f"{total_q} Q's",
+                    severity="info",
+                    category="structure",
+                )
+            )
+
+        # 5. Low response questions
+        if insights.response_distributions:
+            low_response = [
+                d for d in insights.response_distributions
+                if d.total_responses < self.survey.response_count * 0.5
             ]
-            if bottom_depts:
+            if low_response:
                 key_insights.append(
                     Insight(
-                        title="Department Adoption Gap",
-                        description=f"{top_dept.name} leads with {top_dept.heavy_users_pct:.0f}% heavy users, while {len(bottom_depts)} department(s) have <{self.config.low_adoption_threshold:.0f}% adoption.",
-                        metric=f"{top_dept.heavy_users_pct:.0f}% vs <{self.config.low_adoption_threshold:.0f}%",
+                        title="Low Response Questions",
+                        description=f"{len(low_response)} question(s) have less than 50% response rate. Consider reviewing question clarity.",
+                        metric=f"{len(low_response)}",
                         severity="warning",
-                        category="adoption",
+                        category="quality",
                     )
                 )
-
-        # 2. Tool stickiness
-        if insights.tool_importance:
-            stickiest = insights.tool_importance[0]
-            key_insights.append(
-                Insight(
-                    title="Most Critical Tool",
-                    description=f"{stickiest.name} has {stickiest.stickiness_score:.0f}% stickiness - {stickiest.super_bummed} would be 'super bummed' to lose it.",
-                    metric=f"{stickiest.stickiness_score:.0f}%",
-                    severity="success",
-                    category="tools",
-                )
-            )
-
-        # 3. Barriers insight
-        if insights.barriers:
-            no_barriers = sum(
-                insights.barriers.get(v, 0) for v in self.config.no_barriers_values
-            )
-            total = sum(insights.barriers.values())
-            has_barriers_pct = (1 - no_barriers / total) * 100 if total > 0 else 0
-            if has_barriers_pct > self.config.barrier_alert_threshold:
-                other_barriers = [
-                    k for k in insights.barriers.keys() if k not in self.config.no_barriers_values
-                ]
-                top_barrier = other_barriers[0] if other_barriers else "Unknown"
-                key_insights.append(
-                    Insight(
-                        title="Adoption Barriers Exist",
-                        description=f"{has_barriers_pct:.0f}% report at least one barrier. Top barrier: '{top_barrier}'",
-                        metric=f"{has_barriers_pct:.0f}%",
-                        severity="warning",
-                        category="barriers",
-                    )
-                )
-
-        # 4. Compliance gap
-        cannot_identify = insights.compliance_gap.get("cannot_identify_admins", 0)
-        can_identify = insights.compliance_gap.get("can_identify_admins", 0)
-        if cannot_identify > 0:
-            gap_pct = cannot_identify / (cannot_identify + can_identify) * 100
-            key_insights.append(
-                Insight(
-                    title="Governance Gap",
-                    description=f"{cannot_identify} users ({gap_pct:.0f}%) cannot identify their workspace admins - potential compliance risk.",
-                    metric=f"{cannot_identify} users",
-                    severity="warning",
-                    category="compliance",
-                )
-            )
-
-        # 5. Adoption funnel
-        funnel = insights.adoption_funnel
-        if funnel:
-            total = funnel.get("total_respondents", 1)
-            heavy = funnel.get("heavy_users", 0)
-            heavy_pct = heavy / total * 100 if total > 0 else 0
-            key_insights.append(
-                Insight(
-                    title="Heavy User Rate",
-                    description=f"{heavy_pct:.0f}% of respondents use AI >3 days/week.",
-                    metric=f"{heavy_pct:.0f}%",
-                    severity="success" if heavy_pct > self.config.high_adoption_threshold else "info",
-                    category="adoption",
-                )
-            )
 
         return key_insights

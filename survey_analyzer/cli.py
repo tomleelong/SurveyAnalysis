@@ -52,13 +52,12 @@ def cli():
 @click.option(
     "--no-insights",
     is_flag=True,
-    help="Generate report without advanced insights section.",
+    help="Generate report without insights section.",
 )
 @click.option(
-    "--insights-config",
-    "-c",
-    type=click.Path(exists=True, path_type=Path),
-    help="JSON config file mapping question purposes to question IDs for insights.",
+    "--segment",
+    "-s",
+    help="Question ID or text to segment responses by (e.g., Q1 or 'department').",
 )
 @click.option(
     "--crosstab",
@@ -79,7 +78,7 @@ def analyze(
     output_dir: Path,
     no_charts: bool,
     no_insights: bool,
-    insights_config: Path | None,
+    segment: str | None,
     crosstab: tuple,
     verbose: bool,
 ):
@@ -103,16 +102,16 @@ def analyze(
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{csv_file.stem}_report.html"
 
-        # Load insights config if provided
+        # Build insights config if segmentation question specified
         config = None
-        if insights_config:
-            click.echo(f"Loading insights config from {insights_config}...")
-            with open(insights_config) as f:
-                config_data = json.load(f)
-            config = InsightsConfig(**config_data)
-        elif not no_insights:
-            # Use auto-detection with default patterns
-            config = InsightsConfig.create_default()
+        if segment and not no_insights:
+            from .models import QuestionMapping
+            config = InsightsConfig(
+                segmentation_question=QuestionMapping(
+                    question_id=segment if segment.startswith("Q") else None,
+                    text_pattern=segment if not segment.startswith("Q") else None,
+                )
+            )
 
         click.echo(f"Analyzing survey data...")
         generator = ReportGenerator(survey, insights_config=config)

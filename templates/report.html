@@ -396,38 +396,32 @@
         </div>
         {% endif %}
 
-        <!-- Executive Summary Charts -->
-        {% if dept_chart or funnel_chart %}
+        <!-- Survey Analytics Charts -->
+        {% if completion_chart or question_type_chart or segmentation_chart or distribution_chart %}
         <div class="section">
-            <h2>Executive Summary</h2>
+            <h2>Survey Analytics</h2>
 
-            {% if funnel_chart %}
+            {% if completion_chart %}
             <div class="chart-container">
-                {{ funnel_chart | safe }}
+                {{ completion_chart | safe }}
             </div>
             {% endif %}
 
-            {% if dept_chart %}
+            {% if question_type_chart %}
             <div class="chart-container">
-                {{ dept_chart | safe }}
+                {{ question_type_chart | safe }}
             </div>
             {% endif %}
 
-            {% if tool_stickiness_chart %}
+            {% if segmentation_chart %}
             <div class="chart-container">
-                {{ tool_stickiness_chart | safe }}
+                {{ segmentation_chart | safe }}
             </div>
             {% endif %}
 
-            {% if barriers_chart %}
+            {% if distribution_chart %}
             <div class="chart-container">
-                {{ barriers_chart | safe }}
-            </div>
-            {% endif %}
-
-            {% if usecase_heatmap %}
-            <div class="chart-container">
-                {{ usecase_heatmap | safe }}
+                {{ distribution_chart | safe }}
             </div>
             {% endif %}
         </div>
