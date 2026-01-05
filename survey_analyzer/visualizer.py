@@ -12,8 +12,27 @@ from .analyzer import CrossTabResult, QuestionStats, SurveyAnalysis
 from .models import QuestionType
 
 
-# Color palette for consistent styling
-COLORS = px.colors.qualitative.Set2
+# Bertram Brand Color Palette
+BERTRAM_COLORS = {
+    "white": "#FFFFFF",
+    "cream": "#F2EFE9",
+    "blue": "#225AA8",
+    "navy": "#232C40",
+    "royal": "#1C2334",
+}
+
+# Color palette for charts - ordered for visual hierarchy
+COLORS = [
+    BERTRAM_COLORS["blue"],    # Primary - Bertram Blue
+    BERTRAM_COLORS["navy"],    # Secondary - Bertram Navy
+    BERTRAM_COLORS["royal"],   # Tertiary - Bertram Royal
+    "#4A7DC4",                 # Lighter blue (derived)
+    "#3D4A5C",                 # Lighter navy (derived)
+    "#2E3A4D",                 # Mid tone (derived)
+    "#6B8FD4",                 # Even lighter blue
+    "#5C6B7A",                 # Light slate
+]
+
 CHART_TEMPLATE = "plotly_white"
 
 
@@ -201,12 +220,19 @@ class SurveyVisualizer:
         """
         df = crosstab.contingency_table
 
+        # Custom Bertram colorscale from cream to blue
+        bertram_colorscale = [
+            [0, BERTRAM_COLORS["cream"]],
+            [0.5, "#4A7DC4"],
+            [1, BERTRAM_COLORS["blue"]],
+        ]
+
         fig = go.Figure(
             go.Heatmap(
                 z=df.values,
                 x=[str(c)[:25] for c in df.columns],
                 y=[str(i)[:25] for i in df.index],
-                colorscale="Blues",
+                colorscale=bertram_colorscale,
                 text=df.values,
                 texttemplate="%{text}",
                 textfont=dict(size=12),

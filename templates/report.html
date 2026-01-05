@@ -7,14 +7,22 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         :root {
-            --primary-color: #2563eb;
-            --secondary-color: #64748b;
-            --background-color: #f8fafc;
-            --card-background: #ffffff;
-            --text-color: #1e293b;
-            --border-color: #e2e8f0;
-            --success-color: #22c55e;
-            --warning-color: #f59e0b;
+            /* Bertram Brand Colors */
+            --bertram-white: #FFFFFF;
+            --bertram-cream: #F2EFE9;
+            --bertram-blue: #225AA8;
+            --bertram-navy: #232C40;
+            --bertram-royal: #1C2334;
+
+            /* Applied Colors */
+            --primary-color: #225AA8;      /* Bertram Blue */
+            --secondary-color: #232C40;    /* Bertram Navy */
+            --background-color: #F2EFE9;   /* Bertram Cream */
+            --card-background: #FFFFFF;    /* Bertram White */
+            --text-color: #1C2334;         /* Bertram Royal */
+            --border-color: #d9d5cd;       /* Darker cream for borders */
+            --success-color: #225AA8;      /* Bertram Blue */
+            --warning-color: #232C40;      /* Bertram Navy */
         }
 
         * {
@@ -37,7 +45,7 @@
         }
 
         header {
-            background: linear-gradient(135deg, var(--primary-color), #1d4ed8);
+            background: linear-gradient(135deg, var(--bertram-navy), var(--bertram-royal));
             color: white;
             padding: 3rem 2rem;
             margin-bottom: 2rem;
@@ -205,13 +213,13 @@
         }
 
         .badge-primary {
-            background: #dbeafe;
-            color: #1d4ed8;
+            background: #d4e2f4;
+            color: var(--bertram-blue);
         }
 
         .badge-success {
-            background: #dcfce7;
-            color: #16a34a;
+            background: #d4e2f4;
+            color: var(--bertram-blue);
         }
 
         .toc {
