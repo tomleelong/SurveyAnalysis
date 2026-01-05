@@ -7,8 +7,9 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, PackageLoader, select_autoescape
 
 from .analyzer import CrossTabResult, QuestionStats, SurveyAnalysis, SurveyAnalyzer
+from .insights import InsightsGenerator
 from .models import QuestionType, Survey
-from .visualizer import SurveyVisualizer
+from .visualizer import InsightsVisualizer, SurveyVisualizer
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class ReportGenerator:
         self,
         output_path: str | Path | None = None,
         include_charts: bool = True,
+        include_insights: bool = True,
         chart_type: str = "bar",  # 'bar' or 'pie'
         crosstab_pairs: list[tuple[str, str]] | None = None,
     ) -> str:
@@ -67,12 +69,45 @@ class ReportGenerator:
         Args:
             output_path: Path to save the report (optional).
             include_charts: Whether to include interactive charts.
+            include_insights: Whether to include advanced insights section.
             chart_type: Default chart type for questions ('bar' or 'pie').
             crosstab_pairs: List of (question_id, question_id) pairs for cross-tabulation.
 
         Returns:
             HTML string of the report.
         """
+        # Generate insights
+        key_insights = None
+        dept_chart = None
+        funnel_chart = None
+        tool_stickiness_chart = None
+        barriers_chart = None
+        usecase_heatmap = None
+
+        if include_insights:
+            insights_gen = InsightsGenerator(self.survey)
+            insights = insights_gen.generate()
+            insights_viz = InsightsVisualizer(insights)
+
+            key_insights = insights.key_insights
+
+            if include_charts:
+                dept_chart = insights_viz.fig_to_html(
+                    insights_viz.create_department_heatmap()
+                )
+                funnel_chart = insights_viz.fig_to_html(
+                    insights_viz.create_adoption_funnel()
+                )
+                tool_stickiness_chart = insights_viz.fig_to_html(
+                    insights_viz.create_tool_stickiness_chart()
+                )
+                barriers_chart = insights_viz.fig_to_html(
+                    insights_viz.create_barriers_chart()
+                )
+                usecase_heatmap = insights_viz.fig_to_html(
+                    insights_viz.create_use_case_by_dept_heatmap()
+                )
+
         # Prepare question data with charts
         question_data = []
         for stats in self.analysis.question_stats:
@@ -125,6 +160,12 @@ class ReportGenerator:
             completion_rate=self.analysis.completion_rate,
             avg_completion_time=self.analysis.avg_completion_time_minutes,
             question_count=len(self.analysis.question_stats),
+            key_insights=key_insights,
+            dept_chart=dept_chart,
+            funnel_chart=funnel_chart,
+            tool_stickiness_chart=tool_stickiness_chart,
+            barriers_chart=barriers_chart,
+            usecase_heatmap=usecase_heatmap,
             summary_chart=summary_chart,
             response_rate_chart=response_rate_chart,
             question_data=question_data,

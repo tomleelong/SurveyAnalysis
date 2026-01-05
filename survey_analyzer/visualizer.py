@@ -471,3 +471,308 @@ class SurveyVisualizer:
             fig.write_html(str(output_path))
         else:
             fig.write_image(str(output_path), width=width, height=height, scale=2)
+
+
+class InsightsVisualizer:
+    """Generate visualizations for advanced survey insights."""
+
+    def __init__(self, insights: "SurveyInsights"):
+        """Initialize with insights data.
+
+        Args:
+            insights: SurveyInsights from InsightsGenerator.
+        """
+        self.insights = insights
+
+    def create_department_heatmap(self) -> go.Figure:
+        """Create a heatmap of department vs usage frequency and tools."""
+        profiles = self.insights.department_profiles
+        if not profiles:
+            return self._create_empty_chart("No department data")
+
+        # Sort by heavy users percentage
+        profiles = sorted(profiles, key=lambda x: -x.heavy_users_pct)
+
+        depts = [p.name for p in profiles]
+        heavy_pcts = [p.heavy_users_pct for p in profiles]
+        counts = [p.respondent_count for p in profiles]
+
+        fig = go.Figure()
+
+        # Bar chart for heavy user percentage
+        fig.add_trace(
+            go.Bar(
+                y=depts[::-1],
+                x=heavy_pcts[::-1],
+                orientation="h",
+                marker_color=[
+                    BERTRAM_COLORS["blue"] if pct >= 70
+                    else BERTRAM_COLORS["navy"] if pct >= 40
+                    else "#8B9AAB"
+                    for pct in heavy_pcts[::-1]
+                ],
+                text=[f"{pct:.0f}% ({count})" for pct, count in zip(heavy_pcts[::-1], counts[::-1])],
+                textposition="auto",
+                hovertemplate="<b>%{y}</b><br>Heavy users: %{x:.0f}%<extra></extra>",
+            )
+        )
+
+        fig.update_layout(
+            title=dict(
+                text="AI Adoption by Department (% using >3 days/week)",
+                font=dict(size=16),
+            ),
+            xaxis_title="Heavy Users (%)",
+            template=CHART_TEMPLATE,
+            height=max(300, len(depts) * 50),
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
+    def create_tool_stickiness_chart(self) -> go.Figure:
+        """Create a chart showing tool importance/stickiness."""
+        tools = self.insights.tool_importance
+        if not tools:
+            return self._create_empty_chart("No tool data")
+
+        # Sort by stickiness
+        tools = sorted(tools, key=lambda x: -x.stickiness_score)[:8]
+
+        fig = go.Figure()
+
+        tool_names = [t.name for t in tools]
+        super_bummed = [t.super_bummed for t in tools]
+        disappointed = [t.disappointed for t in tools]
+        neutral = [t.neutral for t in tools]
+        can_live = [t.can_live_without for t in tools]
+        good_rid = [t.good_riddance for t in tools]
+
+        # Stacked bar chart
+        fig.add_trace(go.Bar(
+            name="Super bummed",
+            y=tool_names[::-1],
+            x=super_bummed[::-1],
+            orientation="h",
+            marker_color=BERTRAM_COLORS["blue"],
+        ))
+        fig.add_trace(go.Bar(
+            name="Disappointed",
+            y=tool_names[::-1],
+            x=disappointed[::-1],
+            orientation="h",
+            marker_color="#4A7DC4",
+        ))
+        fig.add_trace(go.Bar(
+            name="Meh / neutral",
+            y=tool_names[::-1],
+            x=neutral[::-1],
+            orientation="h",
+            marker_color="#8B9AAB",
+        ))
+        fig.add_trace(go.Bar(
+            name="Can live without",
+            y=tool_names[::-1],
+            x=can_live[::-1],
+            orientation="h",
+            marker_color="#C4CDD5",
+        ))
+        fig.add_trace(go.Bar(
+            name="Good riddance",
+            y=tool_names[::-1],
+            x=good_rid[::-1],
+            orientation="h",
+            marker_color="#E8EBEE",
+        ))
+
+        fig.update_layout(
+            title=dict(
+                text="Tool Stickiness: How disappointed would you be if we removed it?",
+                font=dict(size=16),
+            ),
+            barmode="stack",
+            template=CHART_TEMPLATE,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.25),
+            height=max(350, len(tools) * 45),
+            margin=dict(l=20, r=20, t=60, b=80),
+        )
+
+        return fig
+
+    def create_barriers_chart(self) -> go.Figure:
+        """Create a horizontal bar chart for adoption barriers."""
+        barriers = self.insights.barriers
+        if not barriers:
+            return self._create_empty_chart("No barrier data")
+
+        # Remove "No barriers" for this view and sort
+        filtered = {k: v for k, v in barriers.items() if k != "No barriers"}
+        sorted_barriers = sorted(filtered.items(), key=lambda x: -x[1])
+
+        labels = [b[0][:45] for b in sorted_barriers]
+        values = [b[1] for b in sorted_barriers]
+
+        # Calculate total respondents with barriers
+        total_with_barriers = sum(values)
+        no_barriers = barriers.get("No barriers", 0)
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                y=labels[::-1],
+                x=values[::-1],
+                orientation="h",
+                marker_color=BERTRAM_COLORS["navy"],
+                text=values[::-1],
+                textposition="auto",
+            )
+        )
+
+        fig.update_layout(
+            title=dict(
+                text=f"Barriers to AI Adoption ({no_barriers} reported 'No barriers')",
+                font=dict(size=16),
+            ),
+            xaxis_title="Number of Respondents",
+            template=CHART_TEMPLATE,
+            height=max(300, len(labels) * 40),
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
+    def create_adoption_funnel(self) -> go.Figure:
+        """Create a funnel chart showing adoption stages."""
+        funnel = self.insights.adoption_funnel
+        if not funnel:
+            return self._create_empty_chart("No funnel data")
+
+        stages = [
+            ("Total Respondents", funnel.get("total_respondents", 0)),
+            ("Used AI at Work", funnel.get("used_ai_at_work", 0)),
+            ("Heavy Users (>3 days/week)", funnel.get("heavy_users", 0)),
+            ("Multi-Tool Users (3+)", funnel.get("multi_tool_users", 0)),
+            ("CLI Power Users", funnel.get("cli_power_users", 0)),
+        ]
+
+        labels = [s[0] for s in stages]
+        values = [s[1] for s in stages]
+
+        fig = go.Figure(
+            go.Funnel(
+                y=labels,
+                x=values,
+                textposition="inside",
+                textinfo="value+percent initial",
+                marker=dict(
+                    color=[
+                        BERTRAM_COLORS["royal"],
+                        BERTRAM_COLORS["navy"],
+                        BERTRAM_COLORS["blue"],
+                        "#4A7DC4",
+                        "#6B8FD4",
+                    ]
+                ),
+                connector=dict(line=dict(color=BERTRAM_COLORS["cream"], width=2)),
+            )
+        )
+
+        fig.update_layout(
+            title=dict(
+                text="AI Adoption Funnel",
+                font=dict(size=16),
+            ),
+            template=CHART_TEMPLATE,
+            height=400,
+            margin=dict(l=20, r=20, t=60, b=20),
+        )
+
+        return fig
+
+    def create_use_case_by_dept_heatmap(self) -> go.Figure:
+        """Create a heatmap of use cases by department."""
+        profiles = self.insights.department_profiles
+        if not profiles:
+            return self._create_empty_chart("No department data")
+
+        # Get all unique use cases
+        all_usecases: set[str] = set()
+        for p in profiles:
+            all_usecases.update([uc[0] for uc in p.top_use_cases])
+
+        # Build matrix
+        depts = [p.name for p in profiles if p.respondent_count >= 3]  # Filter small depts
+        usecases = sorted(all_usecases)[:10]  # Top 10 use cases
+
+        z_data = []
+        for dept in depts:
+            profile = next((p for p in profiles if p.name == dept), None)
+            if profile:
+                uc_dict = dict(profile.top_use_cases)
+                row = [uc_dict.get(uc, 0) for uc in usecases]
+                z_data.append(row)
+
+        # Truncate labels
+        usecase_labels = [uc[:25] + "..." if len(uc) > 25 else uc for uc in usecases]
+
+        bertram_colorscale = [
+            [0, BERTRAM_COLORS["cream"]],
+            [0.5, "#4A7DC4"],
+            [1, BERTRAM_COLORS["blue"]],
+        ]
+
+        fig = go.Figure(
+            go.Heatmap(
+                z=z_data,
+                x=usecase_labels,
+                y=depts,
+                colorscale=bertram_colorscale,
+                text=z_data,
+                texttemplate="%{text}",
+                textfont=dict(size=11),
+                hovertemplate="<b>%{y}</b><br>%{x}: %{z}<extra></extra>",
+            )
+        )
+
+        fig.update_layout(
+            title=dict(
+                text="Use Cases by Department",
+                font=dict(size=16),
+            ),
+            template=CHART_TEMPLATE,
+            height=max(300, len(depts) * 50),
+            xaxis=dict(tickangle=45),
+            margin=dict(l=20, r=20, t=60, b=120),
+        )
+
+        return fig
+
+    def _create_empty_chart(self, message: str) -> go.Figure:
+        """Create an empty chart with a message."""
+        fig = go.Figure()
+        fig.add_annotation(
+            text=message,
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=16, color="gray"),
+        )
+        fig.update_layout(
+            template=CHART_TEMPLATE,
+            height=300,
+        )
+        return fig
+
+    @staticmethod
+    def fig_to_html(fig: go.Figure, full_html: bool = False) -> str:
+        """Convert figure to HTML string."""
+        return fig.to_html(full_html=full_html, include_plotlyjs="cdn")
+
+
+# Import for type hint
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .insights import SurveyInsights
