@@ -13,9 +13,10 @@ survey_analyzer/
 ├── cli.py          # Click CLI commands (analyze, summary, crosstab, questions)
 ├── parser.py       # Survey Monkey CSV parser (handles 2-row headers)
 ├── analyzer.py     # Statistical analysis (summary stats, cross-tabulation)
-├── visualizer.py   # Plotly chart generation
+├── visualizer.py   # Plotly chart generation (SurveyVisualizer, InsightsVisualizer)
 ├── reporter.py     # HTML report generation with Jinja2
-└── models.py       # Pydantic data models (Survey, Question, Response)
+├── insights.py     # Advanced analytics (config-driven, works with any survey)
+└── models.py       # Pydantic data models (Survey, Question, Response, InsightsConfig)
 ```
 
 ## Key Design Decisions
@@ -28,8 +29,16 @@ survey_analyzer/
 ### Data Flow
 1. `parser.py` reads CSV → `Survey` model with `Question` and `Response` objects
 2. `analyzer.py` computes statistics → `SurveyAnalysis` with `QuestionStats`
-3. `visualizer.py` creates Plotly figures from analysis results
-4. `reporter.py` renders Jinja2 template with embedded charts
+3. `insights.py` generates advanced analytics (optional, config-driven)
+4. `visualizer.py` creates Plotly figures from analysis results
+5. `reporter.py` renders Jinja2 template with embedded charts
+
+### Insights System
+The insights module is config-driven and works with any survey structure:
+- Uses `InsightsConfig` model to map question purposes to question IDs or text patterns
+- Falls back to auto-detection using common text patterns if no config provided
+- Only generates insights for questions that are mapped and found in the survey
+- See `examples/bertram_ai_survey_config.json` for a sample config file
 
 ## Coding Standards
 
@@ -110,6 +119,12 @@ poetry run survey-analyzer summary data.csv
 poetry run survey-analyzer questions data.csv
 poetry run survey-analyzer crosstab data.csv --q1 Q1 --q2 Q5
 
+# With custom insights config
+poetry run survey-analyzer analyze data.csv --insights-config config.json
+
+# Without insights (basic report only)
+poetry run survey-analyzer analyze data.csv --no-insights
+
 # Run tests
 poetry run pytest
 
@@ -117,3 +132,43 @@ poetry run pytest
 poetry run black survey_analyzer/
 poetry run isort survey_analyzer/
 ```
+
+## Insights Configuration
+
+The insights system uses a JSON config file to map question purposes to question IDs. This makes the advanced analytics work with any survey structure.
+
+### Config File Structure
+```json
+{
+  "department_question": {"question_id": "Q1"},
+  "frequency_question": {"question_id": "Q5"},
+  "tools_question": {"question_id": "Q6"},
+  "barriers_question": {"text_pattern": "barrier"},
+  "heavy_user_values": ["More than 3 days per week"],
+  "low_adoption_threshold": 50.0
+}
+```
+
+### Question Mappings
+Each mapping can use either:
+- `question_id`: Direct ID like "Q1", "Q2", etc.
+- `text_pattern`: Partial text match for auto-detection
+
+Available mappings:
+- `department_question`: Respondent's department/team
+- `frequency_question`: Usage frequency
+- `tools_question`: Tools used
+- `use_cases_question`: Use cases
+- `tool_importance_question`: Tool stickiness/disappointment
+- `barriers_question`: Adoption barriers
+- `cli_tools_question`: CLI tool usage
+- `used_ai_question`: Whether respondent has used AI
+- `managed_workspace_question`: Workspace compliance
+- `identify_admins_question`: Admin identification
+
+### Response Value Mappings
+- `heavy_user_values`: Values indicating heavy usage
+- `yes_values`: Affirmative responses
+- `no_values`: Negative responses
+- `cli_keywords`: Keywords identifying CLI tools
+- `no_barriers_values`: Values indicating no barriers

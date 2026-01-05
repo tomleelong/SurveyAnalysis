@@ -101,3 +101,111 @@ class Survey(BaseModel):
             elif not partial and text_lower == q.text.lower():
                 return q
         return None
+
+
+# ============================================================================
+# Insights Configuration Models
+# ============================================================================
+
+
+class QuestionMapping(BaseModel):
+    """Maps a question purpose to a question ID or text pattern."""
+
+    question_id: str | None = None  # Direct question ID (e.g., "Q1")
+    text_pattern: str | None = None  # Partial text match for auto-detection
+    description: str = ""  # Human-readable description of this mapping
+
+
+class SentimentMapping(BaseModel):
+    """Maps sentiment labels to standardized keys for tool importance analysis."""
+
+    super_bummed: str = "Super bummed"
+    disappointed: str = "Disappointed"
+    neutral: str = "Meh / neutral"
+    can_live_without: str = "Can live without"
+    good_riddance: str = "Good riddance"
+
+
+class InsightsConfig(BaseModel):
+    """Configuration for insights generation.
+
+    This allows the insights module to work with any survey by mapping
+    question purposes to specific question IDs or text patterns.
+    """
+
+    # Core question mappings
+    department_question: QuestionMapping | None = None
+    frequency_question: QuestionMapping | None = None
+    tools_question: QuestionMapping | None = None
+    use_cases_question: QuestionMapping | None = None
+    tool_importance_question: QuestionMapping | None = None
+    barriers_question: QuestionMapping | None = None
+    cli_tools_question: QuestionMapping | None = None
+    used_ai_question: QuestionMapping | None = None
+
+    # Compliance questions
+    managed_workspace_question: QuestionMapping | None = None
+    identify_admins_question: QuestionMapping | None = None
+
+    # Response value mappings (for custom response text)
+    heavy_user_values: list[str] = Field(
+        default_factory=lambda: ["More than 3 days per week"]
+    )
+    yes_values: list[str] = Field(default_factory=lambda: ["Yes"])
+    no_values: list[str] = Field(default_factory=lambda: ["No"])
+    cli_keywords: list[str] = Field(default_factory=lambda: ["CLI"])
+    no_barriers_values: list[str] = Field(default_factory=lambda: ["No barriers"])
+
+    # Sentiment mapping for tool importance
+    sentiment_mapping: SentimentMapping = Field(default_factory=SentimentMapping)
+
+    # Thresholds for insight generation
+    low_adoption_threshold: float = 50.0  # % below which adoption is considered low
+    high_adoption_threshold: float = 60.0  # % above which adoption is considered high
+    barrier_alert_threshold: float = 50.0  # % at which barriers trigger warning
+
+    @classmethod
+    def create_default(cls) -> "InsightsConfig":
+        """Create a default config with common text patterns for auto-detection."""
+        return cls(
+            department_question=QuestionMapping(
+                text_pattern="department",
+                description="Question asking about respondent's department",
+            ),
+            frequency_question=QuestionMapping(
+                text_pattern="how often",
+                description="Question about usage frequency",
+            ),
+            tools_question=QuestionMapping(
+                text_pattern="which tools",
+                description="Question about tools used",
+            ),
+            use_cases_question=QuestionMapping(
+                text_pattern="use case",
+                description="Question about use cases",
+            ),
+            tool_importance_question=QuestionMapping(
+                text_pattern="disappointed",
+                description="Question about tool importance/stickiness",
+            ),
+            barriers_question=QuestionMapping(
+                text_pattern="barrier",
+                description="Question about adoption barriers",
+            ),
+            cli_tools_question=QuestionMapping(
+                text_pattern="cli",
+                description="Question about CLI tool usage",
+            ),
+            used_ai_question=QuestionMapping(
+                text_pattern="used ai",
+                description="Question about whether respondent has used AI",
+            ),
+            managed_workspace_question=QuestionMapping(
+                text_pattern="workspace",
+                description="Question about managed workspace usage",
+            ),
+            identify_admins_question=QuestionMapping(
+                text_pattern="admin",
+                description="Question about identifying admins",
+            ),
+        )

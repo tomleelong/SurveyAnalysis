@@ -1,5 +1,6 @@
 """Command-line interface for Survey Analyzer."""
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ import click
 
 from . import __version__
 from .analyzer import SurveyAnalyzer
+from .models import InsightsConfig
 from .parser import parse_survey
 from .reporter import ReportGenerator
 
@@ -48,6 +50,17 @@ def cli():
     help="Generate report without interactive charts.",
 )
 @click.option(
+    "--no-insights",
+    is_flag=True,
+    help="Generate report without advanced insights section.",
+)
+@click.option(
+    "--insights-config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    help="JSON config file mapping question purposes to question IDs for insights.",
+)
+@click.option(
     "--crosstab",
     "-x",
     multiple=True,
@@ -65,6 +78,8 @@ def analyze(
     output: Path | None,
     output_dir: Path,
     no_charts: bool,
+    no_insights: bool,
+    insights_config: Path | None,
     crosstab: tuple,
     verbose: bool,
 ):
@@ -88,8 +103,19 @@ def analyze(
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{csv_file.stem}_report.html"
 
+        # Load insights config if provided
+        config = None
+        if insights_config:
+            click.echo(f"Loading insights config from {insights_config}...")
+            with open(insights_config) as f:
+                config_data = json.load(f)
+            config = InsightsConfig(**config_data)
+        elif not no_insights:
+            # Use auto-detection with default patterns
+            config = InsightsConfig.create_default()
+
         click.echo(f"Analyzing survey data...")
-        generator = ReportGenerator(survey)
+        generator = ReportGenerator(survey, insights_config=config)
 
         # Parse cross-tabulation pairs
         crosstab_pairs = list(crosstab) if crosstab else None
@@ -98,6 +124,7 @@ def analyze(
         generator.generate_report(
             output_path=output_path,
             include_charts=not no_charts,
+            include_insights=not no_insights,
             crosstab_pairs=crosstab_pairs,
         )
 

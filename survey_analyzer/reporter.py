@@ -8,7 +8,7 @@ from jinja2 import Environment, FileSystemLoader, PackageLoader, select_autoesca
 
 from .analyzer import CrossTabResult, QuestionStats, SurveyAnalysis, SurveyAnalyzer
 from .insights import InsightsGenerator
-from .models import QuestionType, Survey
+from .models import InsightsConfig, QuestionType, Survey
 from .visualizer import InsightsVisualizer, SurveyVisualizer
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ class ReportGenerator:
         survey: Survey,
         analysis: SurveyAnalysis | None = None,
         template_dir: str | Path | None = None,
+        insights_config: InsightsConfig | None = None,
     ):
         """Initialize report generator.
 
@@ -29,11 +30,13 @@ class ReportGenerator:
             survey: Parsed Survey object.
             analysis: Pre-computed analysis (optional, will compute if not provided).
             template_dir: Custom template directory (optional).
+            insights_config: Configuration for insights generation (optional).
         """
         self.survey = survey
         self.analysis = analysis or SurveyAnalyzer(survey).analyze()
         self.visualizer = SurveyVisualizer(self.analysis)
         self.analyzer = SurveyAnalyzer(survey)
+        self.insights_config = insights_config
 
         # Set up Jinja2 environment
         if template_dir:
@@ -85,7 +88,7 @@ class ReportGenerator:
         usecase_heatmap = None
 
         if include_insights:
-            insights_gen = InsightsGenerator(self.survey)
+            insights_gen = InsightsGenerator(self.survey, config=self.insights_config)
             insights = insights_gen.generate()
             insights_viz = InsightsVisualizer(insights)
 
@@ -203,6 +206,7 @@ class ReportGenerator:
 def generate_report(
     survey: Survey,
     output_path: str | Path | None = None,
+    insights_config: InsightsConfig | None = None,
     **kwargs,
 ) -> str:
     """Convenience function to generate a report.
@@ -210,10 +214,11 @@ def generate_report(
     Args:
         survey: Parsed Survey object.
         output_path: Path to save the report.
+        insights_config: Configuration for insights generation (optional).
         **kwargs: Additional arguments for ReportGenerator.generate_report.
 
     Returns:
         HTML string of the report.
     """
-    generator = ReportGenerator(survey)
+    generator = ReportGenerator(survey, insights_config=insights_config)
     return generator.generate_report(output_path=output_path, **kwargs)
