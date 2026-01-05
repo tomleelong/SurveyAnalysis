@@ -46,9 +46,9 @@ output/
 *.html
 !templates/*.html
 
-# Data files (keep sample, ignore others)
+# Data files (user data is gitignored)
+data/
 *.csv
-!sample_data/*.csv
 
 # Environment
 .env

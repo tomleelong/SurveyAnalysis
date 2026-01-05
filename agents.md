@@ -101,8 +101,9 @@ Colors are defined in:
 
 ## File Locations
 
-- Sample data: Project root (`*.csv` files)
-- Generated reports: `output/` directory
+- Input data: `data/` directory (gitignored - user's private data)
+- Generated reports: `output/` directory (gitignored)
+- Insights configs: `examples/` directory
 - HTML template: `templates/report.html`
 - Tests: `tests/` directory
 
