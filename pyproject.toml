@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 
+[project.scripts]
+survey-analyzer = "survey_analyzer.cli:main"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
