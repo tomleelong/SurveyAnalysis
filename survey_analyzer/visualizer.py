@@ -693,8 +693,256 @@ class InsightsVisualizer:
         """Convert figure to HTML string."""
         return fig.to_html(full_html=full_html, include_plotlyjs="cdn")
 
+    # =========================================================================
+    # Extended Visualization Methods for Custom Analysis
+    # =========================================================================
+
+    def create_cross_question_chart(
+        self,
+        analysis: "CrossQuestionAnalysis",
+        title: str | None = None,
+    ) -> go.Figure:
+        """Create a bar chart showing a metric by segment.
+
+        Args:
+            analysis: CrossQuestionAnalysis data
+            title: Optional custom title
+
+        Returns:
+            Plotly Figure
+        """
+        if not analysis or not analysis.segments:
+            return self._create_empty_chart("No cross-question data")
+
+        segments = analysis.segments
+        names = [s.segment_name[:30] for s in segments]
+        rates = [s.metric_rate for s in segments]
+        counts = [f"{s.metric_count}/{s.total_count}" for s in segments]
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                y=names[::-1],
+                x=rates[::-1],
+                orientation="h",
+                marker_color=[
+                    BERTRAM_COLORS["blue"] if r >= 70
+                    else BERTRAM_COLORS["navy"] if r >= 40
+                    else "#8B9AAB"
+                    for r in rates[::-1]
+                ],
+                text=[f"{r:.0f}% ({c})" for r, c in zip(rates[::-1], counts[::-1])],
+                textposition="auto",
+                hovertemplate="<b>%{y}</b><br>Rate: %{x:.1f}%<extra></extra>",
+            )
+        )
+
+        display_title = title or f"Metric by Segment"
+
+        fig.update_layout(
+            title=dict(text=display_title, font=dict(size=16)),
+            xaxis_title="Percentage",
+            xaxis=dict(range=[0, 105]),
+            template=CHART_TEMPLATE,
+            height=max(300, len(names) * 45),
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
+    def create_matrix_sentiment_chart(
+        self,
+        analysis: "MatrixSentimentAnalysis",
+        title: str | None = None,
+    ) -> go.Figure:
+        """Create a horizontal bar chart showing sentiment scores by item.
+
+        Args:
+            analysis: MatrixSentimentAnalysis data
+            title: Optional custom title
+
+        Returns:
+            Plotly Figure
+        """
+        if not analysis or not analysis.items:
+            return self._create_empty_chart("No sentiment data")
+
+        items = analysis.items
+        names = [i.item_name[:25] for i in items]
+        scores = [i.avg_score for i in items]
+        counts = [i.response_count for i in items]
+        strong_pcts = [i.strong_positive_pct for i in items]
+
+        # Determine score range for coloring
+        min_score = min(analysis.sentiment_map.values()) if analysis.sentiment_map else -2
+        max_score = max(analysis.sentiment_map.values()) if analysis.sentiment_map else 2
+        mid_score = (min_score + max_score) / 2
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                y=names[::-1],
+                x=scores[::-1],
+                orientation="h",
+                marker_color=[
+                    BERTRAM_COLORS["blue"] if s >= mid_score + 0.5
+                    else BERTRAM_COLORS["navy"] if s >= mid_score
+                    else "#8B9AAB"
+                    for s in scores[::-1]
+                ],
+                text=[f"{s:.2f} (n={c})" for s, c in zip(scores[::-1], counts[::-1])],
+                textposition="auto",
+                hovertemplate="<b>%{y}</b><br>Score: %{x:.2f}<extra></extra>",
+            )
+        )
+
+        display_title = title or "Sentiment Analysis"
+
+        fig.update_layout(
+            title=dict(text=display_title, font=dict(size=16)),
+            xaxis_title="Average Sentiment Score",
+            template=CHART_TEMPLATE,
+            height=max(300, len(names) * 45),
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
+    def create_numeric_histogram_chart(
+        self,
+        distribution: "NumericDistribution",
+        title: str | None = None,
+        show_stats: bool = True,
+    ) -> go.Figure:
+        """Create a histogram for numeric distribution with stats.
+
+        Args:
+            distribution: NumericDistribution data
+            title: Optional custom title
+            show_stats: Whether to show mean/median lines
+
+        Returns:
+            Plotly Figure
+        """
+        if not distribution or not distribution.distribution:
+            return self._create_empty_chart("No numeric data")
+
+        # Sort by score
+        sorted_dist = sorted(distribution.distribution.items())
+        scores = [s[0] for s in sorted_dist]
+        counts = [s[1] for s in sorted_dist]
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                x=scores,
+                y=counts,
+                marker_color=BERTRAM_COLORS["blue"],
+                text=counts,
+                textposition="auto",
+                hovertemplate="Score: %{x}<br>Count: %{y}<extra></extra>",
+            )
+        )
+
+        # Add mean and median lines
+        if show_stats:
+            fig.add_vline(
+                x=distribution.mean,
+                line_dash="dash",
+                line_color=BERTRAM_COLORS["navy"],
+                annotation_text=f"Mean: {distribution.mean:.1f}",
+                annotation_position="top",
+            )
+            fig.add_vline(
+                x=distribution.median,
+                line_dash="dot",
+                line_color=BERTRAM_COLORS["royal"],
+                annotation_text=f"Median: {distribution.median:.1f}",
+                annotation_position="bottom",
+            )
+
+        display_title = title or distribution.question_text[:50]
+
+        fig.update_layout(
+            title=dict(text=display_title, font=dict(size=16)),
+            xaxis_title="Score",
+            yaxis_title="Count",
+            template=CHART_TEMPLATE,
+            height=350,
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
+    def create_response_breakdown_chart(
+        self,
+        distribution: "ResponseDistribution",
+        title: str | None = None,
+        highlight_value: str | None = None,
+    ) -> go.Figure:
+        """Create a bar chart for response breakdown with optional highlight.
+
+        Args:
+            distribution: ResponseDistribution data
+            title: Optional custom title
+            highlight_value: Value to highlight in different color
+
+        Returns:
+            Plotly Figure
+        """
+        if not distribution or not distribution.top_options:
+            return self._create_empty_chart("No response data")
+
+        options = distribution.top_options
+        labels = [opt[0][:35] for opt in options]
+        counts = [opt[1] for opt in options]
+        percentages = [opt[2] for opt in options]
+
+        # Determine colors - highlight specific value if provided
+        colors = []
+        for opt in options:
+            if highlight_value and highlight_value.lower() in opt[0].lower():
+                colors.append("#059669")  # Green for highlighted
+            else:
+                colors.append(BERTRAM_COLORS["blue"])
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                y=labels[::-1],
+                x=counts[::-1],
+                orientation="h",
+                marker_color=colors[::-1],
+                text=[f"{c} ({p:.0f}%)" for c, p in zip(counts[::-1], percentages[::-1])],
+                textposition="auto",
+                hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>",
+            )
+        )
+
+        display_title = title or distribution.question_text[:50]
+
+        fig.update_layout(
+            title=dict(text=display_title, font=dict(size=16)),
+            xaxis_title="Number of Responses",
+            template=CHART_TEMPLATE,
+            height=max(300, len(labels) * 40),
+            margin=dict(l=20, r=20, t=60, b=40),
+        )
+
+        return fig
+
 
 # Import for type hint
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .insights import SurveyInsights
+    from .insights import (
+        SurveyInsights,
+        CrossQuestionAnalysis,
+        MatrixSentimentAnalysis,
+        NumericDistribution,
+        ResponseDistribution,
+    )

@@ -67,6 +67,11 @@ def cli():
     help="Cross-tabulate two questions (e.g., -x Q1 Q2). Can be used multiple times.",
 )
 @click.option(
+    "--no-custom",
+    is_flag=True,
+    help="Generate report without custom analysis section.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -80,6 +85,7 @@ def analyze(
     no_insights: bool,
     segment: str | None,
     crosstab: tuple,
+    no_custom: bool,
     verbose: bool,
 ):
     """Analyze a Survey Monkey CSV export and generate an HTML report.
@@ -119,11 +125,19 @@ def analyze(
         # Parse cross-tabulation pairs
         crosstab_pairs = list(crosstab) if crosstab else None
 
+        # Build custom config for AI Committee-style analysis
+        # This is a default config that works well with typical surveys
+        custom_config = None
+        if not no_custom:
+            custom_config = _build_default_custom_config(survey)
+
         click.echo(f"Generating report...")
         generator.generate_report(
             output_path=output_path,
             include_charts=not no_charts,
             include_insights=not no_insights,
+            include_custom_analysis=not no_custom,
+            custom_config=custom_config,
             crosstab_pairs=crosstab_pairs,
         )
 
@@ -292,6 +306,87 @@ def questions(csv_file: Path):
         logger.exception("Error listing questions")
         click.echo(click.style(f"Error: {e}", fg="red"), err=True)
         sys.exit(1)
+
+
+def _build_default_custom_config(survey) -> dict | None:
+    """Build a default custom analysis config based on survey structure.
+
+    This auto-detects common question patterns and creates appropriate analyses.
+    """
+    from .models import QuestionType
+
+    analyses = []
+
+    # Look for numeric scale questions (perception scores, ratings)
+    for q in survey.questions:
+        if q.question_type == QuestionType.NUMERIC_SCALE:
+            analyses.append({
+                "type": "numeric_histogram",
+                "question": q.text[:50],
+                "title": q.text[:40] + "..." if len(q.text) > 40 else q.text,
+                "show_stats": True,
+            })
+
+    # Look for matrix questions (satisfaction, importance)
+    for q in survey.questions:
+        if q.question_type == QuestionType.MATRIX and " - " in str(q.options[0].label if q.options else ""):
+            # Try to detect sentiment patterns
+            option_labels = [opt.label for opt in q.options]
+            sentiment_map = {}
+
+            # Common sentiment patterns
+            positive_words = ["super bummed", "disappointed", "love", "great", "excellent", "very satisfied"]
+            negative_words = ["good riddance", "can live without", "hate", "terrible", "very dissatisfied"]
+            neutral_words = ["meh", "neutral", "okay", "neither"]
+
+            for label in option_labels:
+                label_lower = label.lower()
+                if any(pos in label_lower for pos in positive_words):
+                    if "super" in label_lower or "very" in label_lower:
+                        sentiment_map[label.rsplit(" - ", 1)[-1]] = 2
+                    else:
+                        sentiment_map[label.rsplit(" - ", 1)[-1]] = 1
+                elif any(neg in label_lower for neg in negative_words):
+                    if "good riddance" in label_lower:
+                        sentiment_map[label.rsplit(" - ", 1)[-1]] = -2
+                    else:
+                        sentiment_map[label.rsplit(" - ", 1)[-1]] = -1
+                elif any(neu in label_lower for neu in neutral_words):
+                    sentiment_map[label.rsplit(" - ", 1)[-1]] = 0
+
+            if sentiment_map:
+                analyses.append({
+                    "type": "matrix_sentiment",
+                    "question": q.text[:50],
+                    "title": "Sentiment: " + (q.text[:30] + "..." if len(q.text) > 30 else q.text),
+                    "sentiment_map": sentiment_map,
+                })
+            break  # Only first matrix question
+
+    # Look for "barriers" or "challenges" questions
+    for q in survey.questions:
+        q_lower = q.text.lower()
+        if any(word in q_lower for word in ["barrier", "challenge", "prevent", "obstacle", "keeping you from"]):
+            highlight = None
+            for opt in q.options:
+                if "no barrier" in opt.label.lower() or "none" in opt.label.lower():
+                    highlight = opt.label
+                    break
+            analyses.append({
+                "type": "response_breakdown",
+                "question": q.text[:50],
+                "title": "Barriers Analysis",
+                "highlight_value": highlight,
+            })
+            break
+
+    if not analyses:
+        return None
+
+    return {
+        "title": "Deep Dive Analysis",
+        "analyses": analyses[:5],  # Limit to 5 analyses
+    }
 
 
 def _print_question_stats(stats):

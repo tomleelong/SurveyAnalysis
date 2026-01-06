@@ -128,3 +128,39 @@ class InsightsConfig(BaseModel):
 
     # Secondary question - analyze this question's responses by segment
     secondary_question: QuestionMapping | None = None
+
+    # Extended options for generic analysis
+    cross_question_pairs: list[tuple[QuestionMapping, QuestionMapping]] = Field(
+        default_factory=list
+    )
+    matrix_sentiment_mappings: dict[str, int] = Field(
+        default_factory=dict
+    )  # e.g., {"Super bummed": 2, "Disappointed": 1}
+    analyze_numeric_distributions: bool = True
+
+
+# ============================================================================
+# Custom Analysis Data Structures
+# ============================================================================
+
+
+class CustomAnalysisConfig(BaseModel):
+    """Configuration for a single custom analysis."""
+
+    type: str  # Analysis type: cross_question_metric, matrix_sentiment, etc.
+    title: str
+    description: str = ""
+    question: str | None = None  # Question text pattern for single-question analyses
+    segment_question: str | None = None  # For cross-question analyses
+    metric_question: str | None = None  # For cross-question analyses
+    metric_values: list[str] = Field(default_factory=list)  # Values to count as "metric"
+    sentiment_map: dict[str, int] = Field(default_factory=dict)  # For matrix sentiment
+    highlight_value: str | None = None  # Value to highlight in charts
+    show_stats: bool = True  # Show mean/median for numeric
+
+
+class CustomConfig(BaseModel):
+    """Complete custom analysis configuration."""
+
+    title: str = "Custom Analysis"
+    analyses: list[CustomAnalysisConfig] = Field(default_factory=list)

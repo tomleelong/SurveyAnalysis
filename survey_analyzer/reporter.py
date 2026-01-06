@@ -7,9 +7,10 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, PackageLoader, select_autoescape
 
 from .analyzer import CrossTabResult, QuestionStats, SurveyAnalysis, SurveyAnalyzer
+from .custom_insights import CustomInsightsGenerator
 from .insights import InsightsGenerator
-from .models import InsightsConfig, QuestionType, Survey
-from .visualizer import InsightsVisualizer, SurveyVisualizer
+from .models import CustomConfig, InsightsConfig, QuestionType, Survey
+from .visualizer import SurveyVisualizer
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ class ReportGenerator:
         output_path: str | Path | None = None,
         include_charts: bool = True,
         include_insights: bool = True,
+        include_custom_analysis: bool = True,
+        custom_config: dict | CustomConfig | None = None,
         chart_type: str = "bar",  # 'bar' or 'pie'
         crosstab_pairs: list[tuple[str, str]] | None = None,
     ) -> str:
@@ -73,6 +76,8 @@ class ReportGenerator:
             output_path: Path to save the report (optional).
             include_charts: Whether to include interactive charts.
             include_insights: Whether to include advanced insights section.
+            include_custom_analysis: Whether to include custom analysis section.
+            custom_config: Configuration for custom analysis (dict or CustomConfig).
             chart_type: Default chart type for questions ('bar' or 'pie').
             crosstab_pairs: List of (question_id, question_id) pairs for cross-tabulation.
 
@@ -81,31 +86,12 @@ class ReportGenerator:
         """
         # Generate insights
         key_insights = None
-        segmentation_chart = None
-        distribution_chart = None
-        completion_chart = None
-        question_type_chart = None
 
         if include_insights:
             insights_gen = InsightsGenerator(self.survey, config=self.insights_config)
             insights = insights_gen.generate()
-            insights_viz = InsightsVisualizer(insights)
 
             key_insights = insights.key_insights
-
-            if include_charts:
-                segmentation_chart = insights_viz.fig_to_html(
-                    insights_viz.create_segmentation_chart()
-                )
-                distribution_chart = insights_viz.fig_to_html(
-                    insights_viz.create_distribution_chart()
-                )
-                completion_chart = insights_viz.fig_to_html(
-                    insights_viz.create_completion_gauge()
-                )
-                question_type_chart = insights_viz.fig_to_html(
-                    insights_viz.create_question_type_chart()
-                )
 
         # Prepare question data with charts
         question_data = []
@@ -124,12 +110,8 @@ class ReportGenerator:
             question_data.append(item)
 
         # Generate summary charts
-        summary_chart = None
         response_rate_chart = None
         if include_charts:
-            summary_chart = self.visualizer.fig_to_html(
-                self.visualizer.create_summary_dashboard()
-            )
             response_rate_chart = self.visualizer.fig_to_html(
                 self.visualizer.create_response_rate_chart()
             )
@@ -150,6 +132,15 @@ class ReportGenerator:
                         crosstab_data["chart"] = self.visualizer.fig_to_html(fig)
                     crosstabs.append(crosstab_data)
 
+        # Generate custom analysis
+        custom_analysis = None
+        if include_custom_analysis and custom_config:
+            try:
+                custom_gen = CustomInsightsGenerator(self.survey, custom_config)
+                custom_analysis = custom_gen.generate()
+            except Exception as e:
+                logger.warning(f"Failed to generate custom analysis: {e}")
+
         # Render template
         template = self.env.get_template("report.html")
         html = template.render(
@@ -160,11 +151,7 @@ class ReportGenerator:
             avg_completion_time=self.analysis.avg_completion_time_minutes,
             question_count=len(self.analysis.question_stats),
             key_insights=key_insights,
-            segmentation_chart=segmentation_chart,
-            distribution_chart=distribution_chart,
-            completion_chart=completion_chart,
-            question_type_chart=question_type_chart,
-            summary_chart=summary_chart,
+            custom_analysis=custom_analysis,
             response_rate_chart=response_rate_chart,
             question_data=question_data,
             crosstabs=crosstabs,
@@ -202,6 +189,7 @@ def generate_report(
     survey: Survey,
     output_path: str | Path | None = None,
     insights_config: InsightsConfig | None = None,
+    custom_config: dict | CustomConfig | None = None,
     **kwargs,
 ) -> str:
     """Convenience function to generate a report.
@@ -210,10 +198,13 @@ def generate_report(
         survey: Parsed Survey object.
         output_path: Path to save the report.
         insights_config: Configuration for insights generation (optional).
+        custom_config: Configuration for custom analysis (optional).
         **kwargs: Additional arguments for ReportGenerator.generate_report.
 
     Returns:
         HTML string of the report.
     """
     generator = ReportGenerator(survey, insights_config=insights_config)
-    return generator.generate_report(output_path=output_path, **kwargs)
+    return generator.generate_report(
+        output_path=output_path, custom_config=custom_config, **kwargs
+    )
