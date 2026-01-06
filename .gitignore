@@ -50,6 +50,9 @@ output/
 data/
 *.csv
 
+# Scripts (survey-specific analysis scripts)
+scripts/
+
 # Environment
 .env
 .env.local

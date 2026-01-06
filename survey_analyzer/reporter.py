@@ -69,6 +69,9 @@ class ReportGenerator:
         custom_config: dict | CustomConfig | None = None,
         chart_type: str = "bar",  # 'bar' or 'pie'
         crosstab_pairs: list[tuple[str, str]] | None = None,
+        summary_tables: list[dict] | None = None,
+        executive_findings: list[str] | None = None,
+        recommendations: list[dict] | None = None,
     ) -> str:
         """Generate HTML report.
 
@@ -80,6 +83,9 @@ class ReportGenerator:
             custom_config: Configuration for custom analysis (dict or CustomConfig).
             chart_type: Default chart type for questions ('bar' or 'pie').
             crosstab_pairs: List of (question_id, question_id) pairs for cross-tabulation.
+            summary_tables: Custom summary tables for the report (optional).
+            executive_findings: List of HTML-formatted finding strings (optional).
+            recommendations: List of dicts with title, description, action keys (optional).
 
         Returns:
             HTML string of the report.
@@ -151,6 +157,9 @@ class ReportGenerator:
             avg_completion_time=self.analysis.avg_completion_time_minutes,
             question_count=len(self.analysis.question_stats),
             key_insights=key_insights,
+            summary_tables=summary_tables,
+            executive_findings=executive_findings,
+            recommendations=recommendations,
             custom_analysis=custom_analysis,
             response_rate_chart=response_rate_chart,
             question_data=question_data,
